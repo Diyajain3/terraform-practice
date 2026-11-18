@@ -11,7 +11,7 @@ filter{
 data "aws_subnet" "shared" {
   filter {
     name="tag:Name"
-    values=["subenta"]
+    values=["subneta"]
   }
   vpc_id=data.aws_vpc.vpc_name.id
 }
