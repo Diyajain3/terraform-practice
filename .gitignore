@@ -1,24 +1,20 @@
 # Terraform directories
-**/.terraform/*
+.terraform/
 
-# Terraform state files
+# Terraform state
 *.tfstate
 *.tfstate.*
+
+# Sensitive variable files
+*.tfvars
+*.tfvars.json
 
 # Crash logs
 crash.log
 crash.*.log
-
-# Variable files (may contain secrets)
-*.tfvars
-*.tfvars.json
 
 # Override files
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-
-# CLI configuration
-.terraformrc
-terraform.rc
