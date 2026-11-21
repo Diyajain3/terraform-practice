@@ -20,6 +20,17 @@ resource "aws_vpc" "secondary_vpc" {
   }
 }
 
+resource "aws_vpc" "additional_vpc" {
+  cidr_block           = var.additional_vpc_cidr
+  provider             = aws.additional
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name = "Additional-VPC-${var.additional}"
+  }
+}
+
 resource "aws_subnet" "primary_subnet" {
   provider                = aws.primary
   vpc_id                  = aws_vpc.primary_vpc.id
@@ -41,7 +52,20 @@ resource "aws_subnet" "secondary_subnet" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name        = "Seconday-Subnet-${var.secondary}"
+    Name        = "Secondary-Subnet-${var.secondary}"
+    Environment = "Demo"
+  }
+}
+
+resource "aws_subnet" "additional_subnet" {
+  provider                = aws.additional
+  vpc_id                  = aws_vpc.additional_vpc.id
+  cidr_block              = var.additional_subnet_cidr
+  availability_zone       = data.aws_availability_zones.additional.names[0]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name        = "Additional-Subnet-${var.additional}"
     Environment = "Demo"
   }
 }
@@ -64,6 +88,17 @@ resource "aws_internet_gateway" "secondary_igw" {
 
   tags = {
     Name        = "Secondary-IGW-${var.secondary}"
+    Environment = "Demo"
+  }
+}
+
+resource "aws_internet_gateway" "additional_igw" {
+  provider = aws.additional
+  vpc_id   = aws_vpc.additional_vpc.id
+
+
+  tags = {
+    Name        = "Additional-IGW-${var.additional}"
     Environment = "Demo"
   }
 }
@@ -98,6 +133,20 @@ resource "aws_route_table" "secondary_rt" {
   }
 }
 
+resource "aws_route_table" "additional_rt" {
+  provider = aws.additional
+  vpc_id   = aws_vpc.additional_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.additional_igw.id
+  }
+
+  tags = {
+    Name        = "Additional-Route-Table"
+    Environment = "Demo"
+  }
+}
 resource "aws_route_table_association" "primary_rta" {
   provider       = aws.primary
   subnet_id      = aws_subnet.primary_subnet.id
@@ -110,7 +159,13 @@ resource "aws_route_table_association" "secondary_rta" {
   route_table_id = aws_route_table.secondary_rt.id
 }
 
+resource "aws_route_table_association" "additional_rta" {
+  provider       = aws.additional
+  subnet_id      = aws_subnet.additional_subnet.id
+  route_table_id = aws_route_table.additional_rt.id
+}
 
+#--------PRIMARY AND SECONDARY-------#
 resource "aws_vpc_peering_connection" "primary_to_secondary" {
   provider    = aws.primary
   vpc_id      = aws_vpc.primary_vpc.id
@@ -138,13 +193,13 @@ resource "aws_vpc_peering_connection" "secondary_to_primary" {
     Side        = "Requester"
   }
 }
-resource "aws_vpc_peering_connection_accepter" "secondary_accepter" {
+resource "aws_vpc_peering_connection_accepter" "primary_secondary_accepter" {
   provider                  = aws.secondary
   vpc_peering_connection_id = aws_vpc_peering_connection.primary_to_secondary.id
   auto_accept               = true
 
   tags = {
-    Name        = "Secondary-Peering-Accepter"
+    Name        = "Primary-Secondary-Peering-Accepter"
     Environment = "Demo"
     Side        = "Accepter"
   }
@@ -155,7 +210,7 @@ resource "aws_route" "primary_to_secondary" {
   destination_cidr_block    = var.secondary_vpc_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.primary_to_secondary.id
 
-  depends_on = [aws_vpc_peering_connection_accepter.secondary_accepter]
+  depends_on = [aws_vpc_peering_connection_accepter.primary_secondary_accepter]
 }
 
 resource "aws_route" "secondary_to_primary" {
@@ -164,8 +219,124 @@ resource "aws_route" "secondary_to_primary" {
   destination_cidr_block    = var.primary_vpc_cidr
   vpc_peering_connection_id = aws_vpc_peering_connection.primary_to_secondary.id
 
-  depends_on = [aws_vpc_peering_connection_accepter.secondary_accepter]
+  depends_on = [aws_vpc_peering_connection_accepter.primary_secondary_accepter]
 }
+
+#--------PRIMARY AND ADDITIONAL-------#
+resource "aws_vpc_peering_connection" "primary_to_additional" {
+  provider    = aws.primary
+  vpc_id      = aws_vpc.primary_vpc.id
+  peer_vpc_id = aws_vpc.additional_vpc.id
+  peer_region = var.additional
+  auto_accept = false
+
+  tags = {
+    Name        = "Primary-to-Additional-Peering"
+    Environment = "Demo"
+    Side        = "Requester"
+  }
+}
+
+resource "aws_vpc_peering_connection" "additional_to_primary" {
+  provider    = aws.additional
+  vpc_id      = aws_vpc.additional_vpc.id
+  peer_vpc_id = aws_vpc.primary_vpc.id
+  peer_region = var.primary
+  auto_accept = false
+
+  tags = {
+    Name        = "Additional-to-Primary-Peering"
+    Environment = "Demo"
+    Side        = "Requester"
+  }
+}
+resource "aws_vpc_peering_connection_accepter" "primary_additional_accepter" {
+  provider                  = aws.additional
+  vpc_peering_connection_id = aws_vpc_peering_connection.primary_to_additional.id
+  auto_accept               = true
+
+  tags = {
+    Name        = "Primary-Additional-Peering-Accepter"
+    Environment = "Demo"
+    Side        = "Accepter"
+  }
+}
+resource "aws_route" "primary_to_additional" {
+  provider                  = aws.primary
+  route_table_id            = aws_route_table.primary_rt.id
+  destination_cidr_block    = var.additional_vpc_cidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.primary_to_additional.id
+
+  depends_on = [aws_vpc_peering_connection_accepter.primary_additional_accepter]
+}
+
+resource "aws_route" "additional_to_primary" {
+  provider                  = aws.additional
+  route_table_id            = aws_route_table.additional_rt.id
+  destination_cidr_block    = var.primary_vpc_cidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.primary_to_additional.id
+
+  depends_on = [aws_vpc_peering_connection_accepter.primary_additional_accepter]
+}
+
+#--------SECONDARY AND ADDITIONAL-------#
+resource "aws_vpc_peering_connection" "secondary_to_additional" {
+  provider    = aws.secondary
+  vpc_id      = aws_vpc.secondary_vpc.id
+  peer_vpc_id = aws_vpc.additional_vpc.id
+  peer_region = var.additional
+  auto_accept = false
+
+  tags = {
+    Name        = "Secondary-to-Additional-Peering"
+    Environment = "Demo"
+    Side        = "Requester"
+  }
+}
+
+resource "aws_vpc_peering_connection" "additional_to_secondary" {
+  provider    = aws.additional
+  vpc_id      = aws_vpc.additional_vpc.id
+  peer_vpc_id = aws_vpc.secondary_vpc.id
+  peer_region = var.secondary
+  auto_accept = false
+
+  tags = {
+    Name        = "Additional-to-Secondary-Peering"
+    Environment = "Demo"
+    Side        = "Requester"
+  }
+}
+resource "aws_vpc_peering_connection_accepter" "secondary_additional_accepter" {
+  provider                  = aws.additional
+  vpc_peering_connection_id = aws_vpc_peering_connection.secondary_to_additional.id
+  auto_accept               = true
+
+  tags = {
+    Name        = "Secondary-Additional-Peering-Accepter"
+    Environment = "Demo"
+    Side        = "Accepter"
+  }
+}
+
+resource "aws_route" "secondary_to_additional" {
+  provider                  = aws.secondary
+  route_table_id            = aws_route_table.secondary_rt.id
+  destination_cidr_block    = var.additional_vpc_cidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.secondary_to_additional.id
+
+  depends_on = [aws_vpc_peering_connection_accepter.secondary_additional_accepter]
+}
+
+resource "aws_route" "additional_to_secondary" {
+  provider                  = aws.additional
+  route_table_id            = aws_route_table.additional_rt.id
+  destination_cidr_block    = var.secondary_vpc_cidr
+vpc_peering_connection_id = aws_vpc_peering_connection.secondary_to_additional.id
+
+  depends_on = [aws_vpc_peering_connection_accepter.secondary_additional_accepter]
+}
+
 
 resource "aws_security_group" "primary_sg" {
   provider    = aws.primary
@@ -186,7 +357,7 @@ resource "aws_security_group" "primary_sg" {
     from_port   = -1
     to_port     = -1
     protocol    = "icmp"
-    cidr_blocks = [var.secondary_vpc_cidr]
+    cidr_blocks = [var.secondary_vpc_cidr,var.additional_vpc_cidr]
   }
 
   ingress {
@@ -194,7 +365,7 @@ resource "aws_security_group" "primary_sg" {
     from_port   = 0
     to_port     = 65535
     protocol    = "tcp"
-    cidr_blocks = [var.secondary_vpc_cidr]
+    cidr_blocks = [var.secondary_vpc_cidr,var.additional_vpc_cidr]
   }
 
   egress {
@@ -230,7 +401,7 @@ resource "aws_security_group" "secondary_sg" {
     from_port   = -1
     to_port     = -1
     protocol    = "icmp"
-    cidr_blocks = [var.primary_vpc_cidr]
+    cidr_blocks = [var.primary_vpc_cidr,var.additional_vpc_cidr]
   }
 
   ingress {
@@ -238,7 +409,7 @@ resource "aws_security_group" "secondary_sg" {
     from_port   = 0
     to_port     = 65535
     protocol    = "tcp"
-    cidr_blocks = [var.primary_vpc_cidr]
+    cidr_blocks = [var.primary_vpc_cidr,var.additional_vpc_cidr]
   }
 
   egress {
@@ -251,6 +422,49 @@ resource "aws_security_group" "secondary_sg" {
 
   tags = {
     Name        = "Secondary-VPC-SG"
+    Environment = "Demo"
+  }
+}
+resource "aws_security_group" "additional_sg" {
+  provider    = aws.additional
+  name        = "additional-vpc-sg"
+  description = "Security group for Additional VPC instance"
+  vpc_id      = aws_vpc.additional_vpc.id
+
+  ingress {
+    description = "SSH from anywhere"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "ICMP from Primary VPC"
+    from_port   = -1
+    to_port     = -1
+    protocol    = "icmp"
+    cidr_blocks = [var.primary_vpc_cidr,var.secondary_vpc_cidr]
+  }
+
+  ingress {
+    description = "All traffic from Primary VPC"
+    from_port   = 0
+    to_port     = 65535
+    protocol    = "tcp"
+    cidr_blocks = [var.primary_vpc_cidr,var.secondary_vpc_cidr]
+  }
+
+  egress {
+    description = "Allow all outbound traffic"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "Additional-VPC-SG"
     Environment = "Demo"
   }
 }
@@ -270,7 +484,7 @@ resource "aws_instance" "primary_instance" {
     Region      = var.primary
   }
 
-  depends_on = [aws_vpc_peering_connection_accepter.secondary_accepter]
+  depends_on = [aws_vpc_peering_connection_accepter.primary_secondary_accepter,aws_vpc_peering_connection_accepter.primary_additional_accepter]
 }
 
 resource "aws_instance" "secondary_instance" {
@@ -289,5 +503,24 @@ resource "aws_instance" "secondary_instance" {
     Region      = var.secondary
   }
 
-  depends_on = [aws_vpc_peering_connection_accepter.secondary_accepter]
+  depends_on = [aws_vpc_peering_connection_accepter.primary_secondary_accepter,aws_vpc_peering_connection_accepter.secondary_additional_accepter]
+}
+
+resource "aws_instance" "additional_instance" {
+  provider               = aws.additional
+  ami                    = data.aws_ami.additional_ami.id
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.additional_subnet.id
+  vpc_security_group_ids = [aws_security_group.additional_sg.id]
+  key_name               = var.additional_key_name
+
+  user_data = local.additional_user_data
+
+  tags = {
+    Name        = "Additional-VPC-Instance"
+    Environment = "Demo"
+    Region      = var.additional
+  }
+
+  depends_on = [aws_vpc_peering_connection_accepter.primary_additional_accepter,aws_vpc_peering_connection_accepter.secondary_additional_accepter]
 }

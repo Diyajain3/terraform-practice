@@ -2,8 +2,6 @@ resource "aws_s3_bucket" "firstbucket" {
   bucket = var.bucket_name
 }
 
-
-
 resource "aws_s3_bucket_public_access_block" "block" {
   bucket = aws_s3_bucket.firstbucket.id
 
